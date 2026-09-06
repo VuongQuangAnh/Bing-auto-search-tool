@@ -4,10 +4,21 @@ import pyautogui as pygui
 import tkinter as tk
 from tkinter import messagebox
 from pynput import mouse
-from PopularWords import words
 
 xPos, yPos = None, None
 root = tk.Tk()
+words = []
+
+def getData () :
+  global words, xPos, yPos
+  with open("Common words.txt", "r") as file :
+    words = file.read().splitlines()
+  
+  with open("Mouse position.txt", "r") as file :
+    data = file.read()
+    if len(data.split()) == 2:
+      xPos, yPos = map(int, data.split())
+      print("hi")
 
 def trackingMousePosition () :
   def whenClick (x, y, _, pressed) :
@@ -17,6 +28,9 @@ def trackingMousePosition () :
       xPos, yPos = x, y
       print(f"x: {x}  y: {y}")
       listener.stop()
+      
+      with open("Mouse position.txt", "w") as file :
+        file.write(f"{x} {y}")
           
   listener = mouse.Listener(on_click = whenClick)
   listener.start()
@@ -59,5 +73,6 @@ def initUI () :
   startButton2.pack()
 
   root.mainloop()
-  
+
+getData()
 initUI()
