@@ -1,12 +1,12 @@
 import random
 import threading
 import pyautogui as pygui
-import tkinter as tk
+import customtkinter as ctk
 from tkinter import messagebox
 from pynput import mouse
 
 xPos, yPos = None, None
-root = tk.Tk()
+root = ctk.CTk()
 words = []
 
 def getData () :
@@ -45,6 +45,7 @@ def trackingMousePosition () :
 
 def searchingProcess () :
   print(f"x: {xPos}  y: {yPos}")
+  startSearchingButton.configure(text = "Right-click to cancel")
   cancelSearchingProcess = threading.Event()
   
   if xPos == None or yPos == None :
@@ -52,6 +53,18 @@ def searchingProcess () :
                          message = f"Invalid mouse position \n (x: {xPos} y: {yPos})",
                          parent = root)
     return
+  
+  def showMessage(success) :
+    if not success :
+      messagebox.showinfo(title = "Cancel",
+                            message = "Task cancelled by user",
+                            parent = root)
+    else :
+      messagebox.showinfo(title = "Succesfull",
+                          message = "Searching Completed",
+                          parent = root)
+    
+    startSearchingButton.configure(text = "Start searching")      
   
   def searchingLoop () :
     searchesCount = 0
@@ -64,9 +77,14 @@ def searchingProcess () :
       print(sleeptime)
       
       if cancelSearchingProcess.wait(sleeptime) :
+        root.after(0, lambda: showMessage(False))
+        listener.stop()
         return
       
       searchesCount += 1
+      
+    root.after(0, lambda: showMessage(True))
+    listener.stop()
       
   threading.Thread(target = searchingLoop, daemon = True).start()
   
@@ -77,35 +95,50 @@ def searchingProcess () :
   
   listener = mouse.Listener(on_click = whenClick)
   listener.start()
-  listener.join()
-  
-  if cancelSearchingProcess.is_set() :
-    messagebox.showinfo(title = "Cancel",
-                          message = "Task cancelled by user",
-                          parent = root)
-    return
-    
-  messagebox.showinfo(title = "Succesfull",
-                      message = "Searching Completed",
-                      parent = root)
-  
-    
-def initUI () :     
-  root.title("Bing auto search tool")
-  root.geometry("300x300")
-  root.attributes("-topmost", True)
 
-  startTrackingButton = tk.Button(root, 
-                        text = "Start tracking",
-                        command = trackingMousePosition)
-  startTrackingButton.pack()
+def initUI():
+    root.title("Bing Auto Search")
+    root.geometry("250x200")
+    root.attributes("-topmost", True)
+    root.resizable(False, False)
+    root.configure(fg_color = "#1e1e2e")
 
-  startButton2 = tk.Button(root, 
-                        text = "Start tracking",
-                        command = searchingProcess)
-  startButton2.pack()
+    title = ctk.CTkLabel(
+        root,
+        text = "Bing Auto Search Tool",
+        font = ("Segoe UI", 20, "bold"),
+        text_color = "#ffffff"
+    )
+    title.pack(pady = 25)
 
-  root.mainloop()
+    startTrackingButton = ctk.CTkButton(
+        root,
+        text = "Start Tracking",
+        command = trackingMousePosition,
+        font = ("Segoe UI", 11, "bold"),
+        height = 45,
+        corner_radius = 15,
+        fg_color = "#313244",
+        hover_color = "#404356",
+        text_color = "#ffffff"
+    )
+    startTrackingButton.pack(fill = "x", padx = 15, pady=6)
+
+    global startSearchingButton
+    startSearchingButton = ctk.CTkButton(
+        root,
+        text = "Start Searching",
+        command = searchingProcess,
+        font = ("Segoe UI", 11, "bold"),
+        height = 45,
+        corner_radius = 15,
+        fg_color = "#89b4fa",
+        hover_color = "#619ffd",
+        text_color = "#ffffff"
+    )
+    startSearchingButton.pack(fill = "x", padx = 15, pady=6)
+
+    root.mainloop()
 
 getData()
 initUI()
