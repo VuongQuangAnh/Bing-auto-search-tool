@@ -45,7 +45,9 @@ def trackingMousePosition () :
 
 def searchingProcess () :
   print(f"x: {xPos}  y: {yPos}")
-  startSearchingButton.configure(text = "Right-click to cancel")
+  startSearchingButton.configure(text = "Right-click to cancel",
+                                 command = None)
+  startTrackingButton.configure(command = None)
   cancelSearchingProcess = threading.Event()
   
   if xPos == None or yPos == None :
@@ -64,7 +66,10 @@ def searchingProcess () :
                           message = "Searching Completed",
                           parent = root)
     
-    startSearchingButton.configure(text = "Start searching")      
+    startSearchingButton.configure(text = "Start searching",
+                                   command = searchingProcess)
+    startTrackingButton.configure(command = trackingMousePosition)
+    
   
   def searchingLoop () :
     searchesCount = 0
@@ -111,6 +116,7 @@ def initUI():
     )
     title.pack(pady = 25)
 
+    global startTrackingButton
     startTrackingButton = ctk.CTkButton(
         root,
         text = "Start Tracking",
