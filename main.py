@@ -45,16 +45,16 @@ def trackingMousePosition () :
 
 def searchingProcess () :
   print(f"x: {xPos}  y: {yPos}")
-  startSearchingButton.configure(text = "Right-click to cancel",
-                                 command = None)
-  startTrackingButton.configure(command = None)
-  cancelSearchingProcess = threading.Event()
   
   if xPos == None or yPos == None :
     messagebox.showerror(title = 'Error',
                          message = f"Invalid mouse position \n (x: {xPos} y: {yPos})",
                          parent = root)
     return
+  startSearchingButton.configure(text = "Right-click to cancel",
+                                 command = None)
+  startTrackingButton.configure(command = None)
+  cancelSearchingProcess = threading.Event()
   
   def showMessage(success) :
     if not success :
@@ -83,7 +83,6 @@ def searchingProcess () :
       
       if cancelSearchingProcess.wait(sleeptime) :
         root.after(0, lambda: showMessage(False))
-        listener.stop()
         return
       
       searchesCount += 1
