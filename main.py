@@ -1,4 +1,5 @@
 import random
+import subprocess
 import threading
 import pyautogui as pygui
 import customtkinter as ctk
@@ -6,10 +7,17 @@ from tkinter import messagebox
 from pynput import mouse
 
 MAXSEARCHES = 33
+
 loopTimes = None
 xPos, yPos = None, None
 root = ctk.CTk()
 words = []
+
+def runShutdown (*args) :
+  # Windows-only: "shutdown /s /t 60" to schedule, "shutdown /a" to abort
+  subprocess.run(["shutdown", *args],
+                 creationflags = subprocess.CREATE_NO_WINDOW,
+                 check = False)
 
 def getData () :
   global words, xPos, yPos, loopTimes
@@ -33,111 +41,159 @@ def getData () :
   except :
     pass
 
+def loadShutdown () :
+  try :
+    with open("Shutdown.txt", "r") as file :
+      return file.read().strip() == "1"
+  except OSError :
+    return False
+
+def saveShutdown () :
+  with open("Shutdown.txt", "w") as file :
+    file.write("1" if shutdownVar.get() else "0")
+
+def saveTabs (_ = None) :
+  with open("Tabs.txt", "w") as file :
+    file.write(entry.get())
+
 def trackingMousePosition () :
+  startTrackingButton.configure(command = None)
+  
+  def finishTracking () :
+    startTrackingButton.configure(command = trackingMousePosition)
+    messagebox.showinfo(title = "Successful", 
+                        message = "Finished retrieving mouse position",
+                        parent = root)
+  
   def whenClick (x, y, _, pressed) :
     global xPos, yPos
     
     if pressed :
       xPos, yPos = x, y
-      # print(f"x: {x}  y: {y}")
-      listener.stop()
       
       with open("Mouse position.txt", "w") as file :
         file.write(f"{x} {y}")
-          
-  listener = mouse.Listener(on_click = whenClick)
-  listener.start()
-  listener.join()
-    
-  messagebox.showinfo(title = "Successful", 
-                      message = "Finished retrieving mouse position",
-                      parent = root)
+      
+      root.after(0, finishTracking)
+      return False  # stops the listener
+  
+  # Non-blocking: the UI stays responsive while waiting for the click
+  mouse.Listener(on_click = whenClick).start()
 
 def searchingProcess () :
-  # print(f"x: {xPos}  y: {yPos}")
+  global loopTimes
   
-  if xPos == None or yPos == None :
-    messagebox.showerror(title = 'Error',
+  if xPos is None or yPos is None :
+    messagebox.showerror(title = "Error",
                          message = f"Invalid mouse position \n (x: {xPos} y: {yPos})",
                          parent = root)
     return
   
-  print(f"Loops: {entry.get()}")
-  if not entry.get() :
+  if not words :
+    messagebox.showerror(title = "Error",
+                         message = "Common words.txt is empty",
+                         parent = root)
+    return
+  
+  # Read the entry here (main thread). Tkinter widgets must not be touched from other threads.
+  tabsText = entry.get()
+  if not tabsText :
     messagebox.showerror(parent = root,
                          message = "Tab fill cannot be empty",
                          title = "Error")
-  elif entry.get() == "0" :
+    return
+  
+  tabs = int(tabsText)
+  if tabs == 0 :
     messagebox.showerror(parent = root,
                          message = "Tab fill cannot be zero",
                          title = "Error")
     return
-    
+  
+  loopTimes = tabs
+  saveTabs()
+  
   startSearchingButton.configure(text = "Right-click to cancel",
                                  command = None)
   startTrackingButton.configure(command = None)
   cancelSearchingProcess = threading.Event()
   
-  def showMessage(success) :
-    if not success :
+  def whenClick (_, __, button, pressed) :
+    if pressed and button == mouse.Button.right :
+      cancelSearchingProcess.set()
+      return False  # stops the listener
+  
+  # Created before the worker thread starts, so the thread can never see it undefined
+  listener = mouse.Listener(on_click = whenClick)
+  
+  def showMessage (result, error) :
+    listener.stop()
+    startSearchingButton.configure(text = "Start Searching",
+                                   command = searchingProcess)
+    startTrackingButton.configure(command = trackingMousePosition)
+    
+    if result == "cancel" :
       messagebox.showinfo(title = "Cancel",
-                            message = "Task cancelled by user",
-                            parent = root)
+                          message = "Task cancelled by user",
+                          parent = root)
+    elif result == "error" :
+      messagebox.showerror(title = "Error",
+                           message = f"Something went wrong:\n{error}",
+                           parent = root)
+    elif shutdownVar.get() :
+      # Shut down after 60 seconds, giving the user time to cancel
+      runShutdown("/s", "/t", "60")
+      answer = messagebox.askyesno(
+          title = "Shutdown",
+          message = "Your PC will shut down in 60 seconds.\nDo you want to cancel the shutdown?",
+          parent = root)
+      if answer :
+        runShutdown("/a")
     else :
       messagebox.showinfo(title = "Successful",
                           message = "Searching Completed",
                           parent = root)
-    
-    startSearchingButton.configure(text = "Start searching",
-                                   command = searchingProcess)
-    startTrackingButton.configure(command = trackingMousePosition)
-    
   
-  def searchingLoop () :
-    global loopTimes
-    loopTimes = int(entry.get())
-    
-    for _ in range(loopTimes) :
-      searchesCount = 0
-      
-      while searchesCount < MAXSEARCHES and not cancelSearchingProcess.is_set():
-        print(f"Searched: {searchesCount}")
+  def switchWindow () :
+    pygui.keyDown("alt")
+    try :
+      for _ in range(tabs) :
+        pygui.press("tab")
+    finally :
+      pygui.keyUp("alt")  # never leave alt stuck down
+  
+  def runSearches () :
+    """Returns True if finished, False if cancelled."""
+    for _ in range(tabs) :
+      for __ in range(MAXSEARCHES) :
         pygui.click(xPos, yPos)
         pygui.write(random.choice(words) + " ", random.uniform(0.05, 0.1))
         pygui.press("enter")
-        sleeptime = random.randint(10000, 17000) / 1000
-        # print(sleeptime)
         
-        if cancelSearchingProcess.wait(sleeptime) :
-          root.after(0, lambda: showMessage(False))
-          return
-        
-        searchesCount += 1
+        if cancelSearchingProcess.wait(random.uniform(10, 17)) :
+          return False
       
-      if loopTimes != 1:
-        pygui.keyDown("alt")
-        for __ in range(loopTimes) :
-          pygui.press("tab")
-          print("pressed")
-          
-        pygui.keyUp("alt")
-      
-    root.after(0, lambda: showMessage(True))
-    listener.stop()
-      
-  threading.Thread(target = searchingLoop, daemon = True).start()
+      if tabs != 1 :
+        switchWindow()
+        if cancelSearchingProcess.is_set() :
+          return False
+    return True
   
-  def whenClick (_, __, button, pressed) :
-    if pressed and button == mouse.Button.right :
-      cancelSearchingProcess.set()
-      listener.stop()
+  def searchingLoop () :
+    result, error = "done", ""
+    try :
+      if not runSearches() :
+        result = "cancel"
+    except Exception as e :  # e.g. pyautogui fail-safe (mouse moved to a corner)
+      result, error = "error", str(e)
+    root.after(0, lambda: showMessage(result, error))
   
-  listener = mouse.Listener(on_click = whenClick)
   listener.start()
+  threading.Thread(target = searchingLoop, daemon = True).start()
   
 def initUI():
     root.title("Bing Auto Search")
-    root.geometry("250x240")
+    root.geometry("250x280")
     root.attributes("-topmost", True)
     root.resizable(False, False)
     root.configure(fg_color = "#1e1e2e")
@@ -162,7 +218,7 @@ def initUI():
         hover_color = "#404356",
         text_color = "#ffffff"
     )
-    startTrackingButton.pack(fill = "x", padx = 15, pady=6)
+    startTrackingButton.pack(fill = "x", padx = 15, pady = 6)
 
     global startSearchingButton
     startSearchingButton = ctk.CTkButton(
@@ -176,7 +232,7 @@ def initUI():
         hover_color = "#619ffd",
         text_color = "#ffffff"
     )
-    startSearchingButton.pack(fill = "x", padx = 15, pady=6)
+    startSearchingButton.pack(fill = "x", padx = 15, pady = 6)
     
     tabsFrame = ctk.CTkFrame(
           root,
@@ -191,12 +247,12 @@ def initUI():
       text_color = "#ffffff"
     )
       
-    text.pack(side="left")
+    text.pack(side = "left")
     
     global entry
     entry = ctk.CTkEntry(
         tabsFrame,
-        textvariable = ctk.IntVar(value = 1 if loopTimes is None else loopTimes),
+        textvariable = ctk.StringVar(value = str(1 if loopTimes is None else loopTimes)),
         width = 60,
         height = 38,
         justify = "center",
@@ -207,18 +263,28 @@ def initUI():
         text_color = "white",
         corner_radius = 8,
         validate = "key",
-        validatecommand = (root.register(lambda input: input.isdigit() or not input), "%P")
+        validatecommand = (root.register(lambda input: input.isdecimal() or not input), "%P")
     )
-  
-  
     entry.pack(padx = 15)
+    entry.bind("<FocusOut>", saveTabs)
     
-    def savePosition (_) :
-      with open("Tabs.txt", "w") as file :
-        file.write(entry.get())
-    entry.bind("<FocusOut>", savePosition)
-    
-    root.mainloop()
+    global shutdownVar
+    shutdownVar = ctk.BooleanVar(value = loadShutdown())
+    shutdownCheck = ctk.CTkCheckBox(
+        root,
+        text = "Shutdown when done",
+        variable = shutdownVar,
+        command = saveShutdown,
+        font = ("Segoe UI", 10),
+        text_color = "#ffffff",
+        checkbox_width = 16,
+        checkbox_height = 16,
+        border_width = 1,
+        corner_radius = 4
+    )
+    shutdownCheck.pack(pady = 6)
 
-getData()
-initUI()
+if __name__ == "__main__" :
+  getData()
+  initUI()
+  root.mainloop()
